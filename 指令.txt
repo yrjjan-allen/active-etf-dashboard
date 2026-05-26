@@ -1,0 +1,74 @@
+@contextScopeItemMention 
+從零開始幫我規畫並寫出一個可以讓我自動偵測主動式etf的網頁，以下為條件
+Role & Context:
+你是一位資深的 Python 量化爬蟲工程師。你正在維護一個名為「ETF 動態籌碼戰情室」的專案。該系統由 Streamlit (UI) 與 Selenium + Requests (Crawler) 組成。
+
+Core Directives for Crawler (etf_crawler.py):
+
+Hybrid Approach is Mandatory: 優先使用 Requests 發送 API。如果 API 失敗，必須 fallback 到 Selenium 進行無頭瀏覽器抓取。
+
+API Safeguards: 處理 API 時，留意 C# 後端常需要的 Form-Data 格式 (非 JSON)，並在需要時偽裝 Referer。
+
+SPA Handling: 使用 Selenium 時，注意防暫存 (URL 加上時間戳，注意 # 錨點順序)。必須執行「精準點擊 (Sniper Click)」，只要點到「投資組合」或「基金資產」等關鍵字一次就必須 break，嚴禁過度點擊。點擊後必須執行 window.scrollBy。
+
+The Fallback Parser: 如果 pd.read_html 失敗，必須呼叫原生的 DOM 正則掃描器。掃描邏輯為：剝離 HTML -> 尋找 4 碼數字 -> 過濾解析度雜訊 (如 1920, 1080) -> 往後尋找 15 個詞 -> 跳過帶有 % 或小數點 . 的數字 -> 將找到的「第一個大於 0 的純整數」視為股數並 break (避免抓到總金額)。
+
+Core Directives for UI (web_ui.py):
+
+Data Cleansing: 讀取 CSV 時，必須強制剔除股票代號為 1920, 1080 等已知的舊版雜訊。
+
+Delta Calculation: 分析模組不僅要顯示前 10 大持股，更要計算「最新日」與「前一日」的股數差額 (Movers)。
+
+Tactical Indicators: 根據差額賦予燈號 (⭐新進, ❌出清, 🔴加碼, 🟢減碼)，並在 UI 按鈕上清楚顯示變動的數字。
+
+UX Focus: 提供「一鍵更新所有 ETF」的功能，並搭配 st.progress 顯示進度。
+
+Task:
+請根據上述邏輯，幫我在爬蟲中加入下列資訊以抓取資料
+1. 復華投信 (API 直連型 - 需偽裝來源)
+特性：資料直接由 API 提供 JSON，最乾淨。但會檢查 Referer (來源網址)，必須偽裝是從官網點擊進來的，且必須使用內部建檔代號 (如 ETF23，而非公開代號 00929)。
+API 網址 (GET)：https://www.fhtrust.com.tw/api/assets?fundID={內部代號}&qDate={YYYY/MM/DD}
+必須搭配的 Header：
+JSON
+{"Referer": "https://www.fhtrust.com.tw/ETF/etf_detail/{內部代號}"}
+2. 野村投信 (API 直連型 - 需表單格式)
+特性：資料由微軟 C# API 提供，極度排斥 JSON 格式的 Payload，必須使用傳統的 Form-Data 格式傳送參數，否則會報錯 415 或 Null Reference。
+API 網址 (POST)：https://www.nomurafunds.com.tw/API/ETFAPI/api/Fund/GetFundAssets
+必須使用的 Python requests 語法：
+requests.post(url, data={"fundNo": "00980A"}) # 絕對不能用 json={"fundNo":...}
+3. 群益投信 (防護網頁型 - SPA 需精準點擊)
+特性：標準的單頁應用程式 (SPA)。網址進入後預設不顯示持股，必須用無頭瀏覽器 (Selenium) 找到並點擊「投資組合」按籤，且必須使用他們官網專屬的「內部 3 碼 ID」。
+網頁直連網址 (需配合 Selenium)：https://www.capitalfund.com.tw/etf/product/detail/{內部3碼ID}
+(註：00982A 為 399，00992A 為 500)
+4. 統一投信 (友善網頁型)
+特性：網頁相對簡單，帶有特定參數即可直達包含持股資訊的頁面。同樣需要內部自訂的代號字串。
+網頁直連網址 (可嘗試 Pandas 直抓或 Selenium)：https://www.ezmoney.com.tw/ETF/Fund/Info?FundCode={內部字串代號}
+(註：00981A 為 61YTW)
+5. 安聯投信 (友善網頁型)
+特性：網址直接利用 tab=4 參數跳轉到持股分頁。
+網頁直連網址 (Selenium 滾動抓取)：
+https://etf.allianzgi.com.tw/etf-info/{內部代號}?tab=4
+(註：00984A 為 E0001)
+國泰投信 (防護網頁型 - iframe 或動態載入)
+特性：國泰的網頁通常將資料包在 iframe 或是經過深層的 JS 渲染，直接用 Pandas 極難抓取，通常需要完整的 Selenium 滾動與等待。
+網頁直連網址 (Selenium)：https://www.cathaysite.com.tw/etf/detail/{ETF代號}
+
+# 進入後通常需要點擊「持股權重」或類似標籤
+7. 元大投信 (網頁型)
+特性：台灣最大的 ETF 發行商（如 0050），其網頁可以直接帶入公開代號查詢。
+網頁直連網址 (Selenium)：
+https://www.yuantaetfs.com/product/detail/{ETF公開代號}/ratio
+(註：部分頁面可能需要點擊「權重」或「成分股」標籤)
+8. 中信投信 (網頁型)
+特性：通常可以直接帶入公開代號。
+網頁直連網址 (Selenium)：https://www.ctbcinvestments.com/Product/ETF/{ETF公開代號}
+
+# 進入後需要尋找並點擊「投資組合」或「成分股」
+💡 開發建議：如何對付新加入的投信？
+當你要把（例如國泰或元大）加入你的戰情室時，你可以按照這個標準作戰流程 (SOP) 來擴充你的 etf_crawler.py：
+
+先找 API (開 F12 網路面板)：去他們官網點開持股分頁，看看 Network 裡有沒有偷傳 JSON 檔。如果有，就用 引擎A (API 極速通道)。
+
+如果沒有 API，用瀏覽器硬闖：把網址加到 url_map 裡面。
+
+尋找關鍵字 (精準點擊)：觀察他們官網把持股藏在哪個按鈕下（例如「成分股」、「持股權重」），然後把這個關鍵字加到 keywords = ["基金資產", "投資組合", "每日持股", "持股", "成分股"] 這個陣列裡。
