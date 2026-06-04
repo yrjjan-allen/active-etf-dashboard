@@ -2,7 +2,8 @@ name: Auto ETF Data Crawler
 
 on:
   schedule:
-    - cron: '0 20 * * *' # 每天 UTC 20:00，即台灣時間 04:00 AM
+    - cron: '0 15 * * *' # 每天 UTC 15:00，即台灣時間 23:00 (晚上11點)
+    - cron: '0 20 * * *' # 每天 UTC 20:00，即台灣時間 04:00 (凌晨4點)
   workflow_dispatch:      # 允許手動點擊執行
 
 permissions:
